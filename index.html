@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#F5EDD9">
+  <title>Aiming Trainer</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #F5EDD9;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    #canvas {
+      display: block;
+      position: fixed;
+      top: 0;
+      left: 0;
+    }
+
+    /* ── Start screen ──────────────────────────────────────── */
+    #startScreen {
+      position: fixed;
+      inset: 0;
+      background: rgba(12, 10, 6, 0.84);
+      color: #F5EDD9;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2.5rem 2rem;
+      text-align: center;
+      z-index: 30;
+    }
+
+    #startScreen h1 {
+      font-size: clamp(1.6rem, 6vw, 2.5rem);
+      font-weight: 700;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      letter-spacing: 0.02em;
+      margin-bottom: 1rem;
+    }
+
+    #startScreen p {
+      font-size: clamp(0.88rem, 3.2vw, 1.05rem);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      line-height: 1.7;
+      max-width: 34ch;
+      margin-bottom: 0.55rem;
+      opacity: 0.88;
+    }
+
+    #startBtn {
+      margin-top: 2rem;
+      padding: 0.9rem 2.8rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      letter-spacing: 0.05em;
+      background: #5D8A3C;
+      color: #fff;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+    }
+
+    #startBtn:active {
+      transform: scale(0.97);
+    }
+
+    #startBtn:disabled {
+      opacity: 0.6;
+    }
+
+    /* ── HUD ───────────────────────────────────────────────── */
+    #hud {
+      position: fixed;
+      top: max(env(safe-area-inset-top, 0px), 10px);
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 max(env(safe-area-inset-right, 0px), 14px)
+               0 max(env(safe-area-inset-left,  0px), 14px);
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    .pill {
+      background: rgba(12, 10, 6, 0.58);
+      color: #F5EDD9;
+      font-size: 0.80rem;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      letter-spacing: 0.03em;
+      padding: 0.32rem 1rem;
+      border-radius: 50px;
+      border: none;
+      pointer-events: all;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .pill:active { opacity: 0.72; }
+
+    /* ── Feedback toast ────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: calc(max(env(safe-area-inset-bottom, 0px), 0px) + 18%);
+      left: 50%;
+      transform: translateX(-50%) translateY(14px);
+      background: rgba(12, 10, 6, 0.82);
+      color: #F5EDD9;
+      font-size: 1.25rem;
+      font-weight: 700;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 0.6rem 1.8rem;
+      border-radius: 50px;
+      pointer-events: none;
+      z-index: 20;
+      white-space: nowrap;
+      opacity: 0;
+      transform: translateX(-50%) translateY(14px);
+      transition: opacity 0.22s ease, transform 0.22s ease;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Start screen ──────────────────────────────────────── -->
+  <div id="startScreen">
+    <h1>🎯 Aiming Trainer</h1>
+    <p>Practise your sight picture as seen through<br>smallbore rifle sights.</p>
+    <p>Tilt your device to align the concentric<br>sight rings with the aiming mark.</p>
+    <p>Tap the screen to take a shot.</p>
+    <button id="startBtn">Begin Training</button>
+  </div>
+
+  <!-- ── Main canvas ───────────────────────────────────────── -->
+  <canvas id="canvas"></canvas>
+
+  <!-- ── HUD ──────────────────────────────────────────────── -->
+  <div id="hud">
+    <button class="pill" id="clearBtn">Clear shots</button>
+    <div   class="pill" id="shotCount" style="pointer-events:none">0 shots</div>
+  </div>
+
+  <!-- ── Score toast ──────────────────────────────────────── -->
+  <div id="toast"></div>
+
+  <script>
+    'use strict';
+
+    /* ─── DOM refs ──────────────────────────────────────────── */
+    const canvas      = document.getElementById('canvas');
+    const ctx         = canvas.getContext('2d');
+    const startScreen = document.getElementById('startScreen');
+    const startBtn    = document.getElementById('startBtn');
+    const clearBtn    = document.getElementById('clearBtn');
+    const shotCountEl = document.getElementById('shotCount');
+    const toastEl     = document.getElementById('toast');
+
+    /* ─── App state ─────────────────────────────────────────── */
+    let W = 0, H = 0;          // canvas dimensions (px)
+    let sightX = 0;            // sight offset from canvas centre
+    let sightY = 0;
+    let betaZero  = null;      // reference tilt angles (zeroed at start)
+    let gammaZero = null;
+    let shots = [];            // [{x, y, score}]
+    let isRunning   = false;
+    let usingPointer = false;  // true when falling back to mouse / touch-drag
+    let toastTimer  = null;
+    let flash       = null;    // {x, y, t} — brief ring animation after a shot
+    let hintText    = '';
+    let hintStart   = null;    // performance.now() when hint began
+
+    /* ─── Tunable constants ─────────────────────────────────── */
+    const SENSITIVITY    = 7;    // pixels of sight movement per degree of tilt
+    const MAX_FRACTION   = 0.42; // max sight offset as fraction of short edge
+    const HINT_DURATION  = 3500; // ms before hint fully fades
+    const HINT_FADE_MS   = 1000; // fade-out duration
+    const FLASH_DURATION = 380;  // ms for post-shot ring flash
+
+    /* ─── Geometry helpers ──────────────────────────────────── */
+
+    /** Shorter of width / height — used for all proportional sizing. */
+    function shortEdge() { return Math.min(W, H); }
+
+    /**
+     * Target geometry.
+     * rings[0] = innermost (10-ring, same radius as the black bull)
+     * rings[4] = outermost (6-ring)
+     */
+    function targetGeom() {
+      const s    = shortEdge();
+      const bull = s * 0.055;
+      return {
+        bull,
+        rings: [bull, bull * 1.90, bull * 2.80, bull * 3.70, bull * 4.60],
+      };
+    }
+
+    /**
+     * Sight geometry.
+     * rearR   — radius of the rear aperture opening
+     * tunnelR — foresight tunnel ring radius
+     * elemR   — foresight element ring radius (≈ bull, giving the classic sight picture)
+     */
+    function sightGeom() {
+      const s = shortEdge();
+      return {
+        rearR:   s * 0.320,
+        tunnelR: s * 0.130,
+        elemR:   s * 0.055,
+        tunnelW: s * 0.011,
+        elemW:   s * 0.008,
+      };
+    }
+
+    /* ─── Drawing ───────────────────────────────────────────── */
+
+    function draw() {
+      const cx = W / 2;
+      const cy = H / 2;
+
+      const { bull, rings }                           = targetGeom();
+      const { rearR, tunnelR, elemR, tunnelW, elemW } = sightGeom();
+
+      // 1. Cream background
+      ctx.fillStyle = '#F5EDD9';
+      ctx.fillRect(0, 0, W, H);
+
+      // 2. Target scoring rings (faint lines, outer → inner)
+      ctx.strokeStyle = 'rgba(80, 72, 52, 0.48)';
+      ctx.lineWidth   = 0.9;
+      for (let i = 1; i < rings.length; i++) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, rings[i], 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // 3. Black aiming mark (bull)
+      ctx.fillStyle = '#1B1815';
+      ctx.beginPath();
+      ctx.arc(cx, cy, bull, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (isRunning) {
+        const sx = cx + sightX;
+        const sy = cy + sightY;
+
+        // 4. Rear sight: dark overlay with the aperture hole cut out.
+        //    Uses even-odd fill rule: the rect (path 1) minus the aperture
+        //    circle (path 2) creates a "donut" — the metal of the rear sight.
+        ctx.fillStyle = 'rgba(16, 13, 9, 0.87)';
+        ctx.beginPath();
+        ctx.rect(0, 0, W, H);
+        ctx.arc(sx, sy, rearR, 0, Math.PI * 2);
+        ctx.fill('evenodd');
+
+        // 5. Foresight tunnel ring
+        ctx.beginPath();
+        ctx.arc(sx, sy, tunnelR, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(16, 13, 9, 0.93)';
+        ctx.lineWidth   = tunnelW;
+        ctx.stroke();
+
+        // 6. Foresight element ring
+        ctx.beginPath();
+        ctx.arc(sx, sy, elemR, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(16, 13, 9, 0.93)';
+        ctx.lineWidth   = elemW;
+        ctx.stroke();
+
+        // 7. Shot holes — drawn on top so they remain visible regardless
+        //    of where the sight is currently positioned
+        shots.forEach(({ x, y }) => {
+          const px = cx + x;
+          const py = cy + y;
+          ctx.beginPath();
+          ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#CC2828';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.70)';
+          ctx.lineWidth   = 1;
+          ctx.stroke();
+        });
+
+        // 8. Post-shot expanding ring flash
+        if (flash) {
+          const elapsed = performance.now() - flash.t;
+          if (elapsed < FLASH_DURATION) {
+            const p = elapsed / FLASH_DURATION;
+            const r = elemR * (1 + p * 2.8);
+            const a = (1 - p) * 0.75;
+            ctx.beginPath();
+            ctx.arc(cx + flash.x, cy + flash.y, r, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(255, 248, 215, ${a})`;
+            ctx.lineWidth   = 2.5;
+            ctx.stroke();
+          } else {
+            flash = null;
+          }
+        }
+
+        // 9. Instruction hint — fades after HINT_DURATION ms
+        if (hintStart !== null) {
+          const elapsed = performance.now() - hintStart;
+          if (elapsed < HINT_DURATION) {
+            const alpha = elapsed < (HINT_DURATION - HINT_FADE_MS)
+              ? 0.70
+              : 0.70 * (1 - (elapsed - (HINT_DURATION - HINT_FADE_MS)) / HINT_FADE_MS);
+            const fontSize = Math.round(shortEdge() * 0.037);
+            ctx.font      = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+            ctx.fillStyle = `rgba(55, 48, 32, ${alpha})`;
+            ctx.textAlign = 'center';
+            ctx.fillText(hintText, W / 2, H - shortEdge() * 0.07);
+          } else {
+            hintStart = null;
+          }
+        }
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    /* ─── Device orientation ────────────────────────────────── */
+
+    function handleOrientation(e) {
+      if (!isRunning) return;
+
+      const beta  = e.beta;
+      const gamma = e.gamma;
+
+      // Ignore null values (sensor not available)
+      if (beta === null || gamma === null) return;
+
+      // Capture zero reference on first real reading
+      if (betaZero === null) {
+        betaZero  = beta;
+        gammaZero = gamma;
+      }
+
+      const maxOff = shortEdge() * MAX_FRACTION;
+      sightX = clamp((gamma - gammaZero) * SENSITIVITY, -maxOff, maxOff);
+      sightY = clamp((beta  - betaZero)  * SENSITIVITY, -maxOff, maxOff);
+    }
+
+    /* ─── Pointer fallback (desktop / no orientation sensor) ── */
+
+    function handlePointerMove(clientX, clientY) {
+      if (!isRunning || !usingPointer) return;
+      const maxOff = shortEdge() * MAX_FRACTION;
+      sightX = clamp(clientX - W / 2, -maxOff, maxOff);
+      sightY = clamp(clientY - H / 2, -maxOff, maxOff);
+    }
+
+    /* ─── Shot logic ────────────────────────────────────────── */
+
+    function takeShot() {
+      if (!isRunning) return;
+
+      const { rings } = targetGeom();
+      const dist = Math.hypot(sightX, sightY);
+
+      // Score: 10 (innermost ring) down to 6, then 0 (miss)
+      let score = 0;
+      for (let i = 0; i < rings.length; i++) {
+        if (dist <= rings[i]) { score = 10 - i; break; }
+      }
+
+      shots.push({ x: sightX, y: sightY, score });
+      flash = { x: sightX, y: sightY, t: performance.now() };
+
+      const n = shots.length;
+      shotCountEl.textContent = `${n} shot${n !== 1 ? 's' : ''}`;
+      showToast(buildScoreLabel(score));
+    }
+
+    function buildScoreLabel(score) {
+      if (score === 10) return '10 — Bull! 🎯';
+      if (score ===  9) return '9 — Excellent ⭐';
+      if (score ===  8) return '8 — Great shot';
+      if (score ===  7) return '7 — Good';
+      if (score ===  6) return '6';
+      // Miss — include compass direction for coaching feedback
+      const deg = Math.atan2(sightY, sightX) * (180 / Math.PI);
+      return `Miss — ${compassDir(deg)}`;
+    }
+
+    /**
+     * Map an angle (degrees, canvas convention: 0° = right, 90° = down)
+     * to a cardinal / inter-cardinal direction string.
+     */
+    function compassDir(deg) {
+      if (deg >= -22.5  && deg <   22.5) return 'Right';
+      if (deg >=  22.5  && deg <   67.5) return 'Low-Right';
+      if (deg >=  67.5  && deg <  112.5) return 'Low';
+      if (deg >= 112.5  && deg <  157.5) return 'Low-Left';
+      if (deg >= 157.5  || deg < -157.5) return 'Left';
+      if (deg >= -157.5 && deg < -112.5) return 'High-Left';
+      if (deg >= -112.5 && deg <  -67.5) return 'High';
+      return 'High-Right';
+    }
+
+    /* ─── Toast ─────────────────────────────────────────────── */
+
+    function showToast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
+    }
+
+    /* ─── Start / permission flow ───────────────────────────── */
+
+    async function startApp() {
+      startBtn.disabled = true;
+
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS 13+ requires explicit user permission
+        try {
+          const result = await DeviceOrientationEvent.requestPermission();
+          if (result === 'granted') {
+            setupOrientationMode();
+          } else {
+            setupPointerMode();
+          }
+        } catch (_) {
+          setupPointerMode();
+        }
+      } else if (typeof DeviceOrientationEvent !== 'undefined') {
+        // Android and most desktop browsers — listen and wait for data
+        setupOrientationMode();
+        // Fall back to pointer mode if no real data arrives within 1 s
+        setTimeout(() => {
+          if (betaZero === null && !usingPointer) setupPointerMode();
+        }, 1000);
+      } else {
+        setupPointerMode();
+      }
+
+      startScreen.style.display = 'none';
+      isRunning = true;
+    }
+
+    function setupOrientationMode() {
+      window.addEventListener('deviceorientation', handleOrientation);
+      hintText  = 'Tilt to aim · Tap to shoot';
+      hintStart = performance.now();
+    }
+
+    function setupPointerMode() {
+      usingPointer = true;
+
+      // Mouse (desktop)
+      window.addEventListener('mousemove', (e) => {
+        handlePointerMove(e.clientX, e.clientY);
+      });
+
+      // Touch-drag (mobile without orientation sensor)
+      // touchmove is handled on canvas — see event wiring below
+      hintText  = 'Slide to aim · Tap to shoot';
+      hintStart = performance.now();
+    }
+
+    /* ─── Input event wiring ────────────────────────────────── */
+
+    startBtn.addEventListener('click', startApp);
+
+    clearBtn.addEventListener('click', () => {
+      shots = [];
+      shotCountEl.textContent = '0 shots';
+    });
+
+    // Touch handling — distinguishes drag (aim) from tap (shoot)
+    let touchStart = null;
+
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      touchStart = { x: t.clientX, y: t.clientY, moved: false };
+
+      if (!usingPointer) {
+        // Orientation mode: shot on touch-down
+        takeShot();
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      if (!touchStart) return;
+      const t = e.touches[0];
+
+      if (usingPointer) {
+        const dx = t.clientX - touchStart.x;
+        const dy = t.clientY - touchStart.y;
+        if (Math.hypot(dx, dy) > 8) touchStart.moved = true;
+        handlePointerMove(t.clientX, t.clientY);
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchend', (e) => {
+      if (usingPointer && touchStart && !touchStart.moved) {
+        // Treat as a tap — take a shot
+        takeShot();
+      }
+      touchStart = null;
+    });
+
+    // Mouse click for desktop pointer mode
+    canvas.addEventListener('click', (e) => {
+      // Guard: touchstart already fires takeShot on mobile; this handler is
+      // only meaningful for desktop (where touchstart never fires).
+      if (usingPointer) takeShot();
+    });
+
+    /* ─── Resize ────────────────────────────────────────────── */
+
+    function onResize() {
+      W = canvas.width  = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+    }
+
+    window.addEventListener('resize', onResize);
+
+    /* ─── Utility ───────────────────────────────────────────── */
+
+    function clamp(v, lo, hi) {
+      return v < lo ? lo : v > hi ? hi : v;
+    }
+
+    /* ─── Bootstrap ─────────────────────────────────────────── */
+
+    onResize();
+    requestAnimationFrame(draw);
+
+  </script>
+</body>
+</html>
